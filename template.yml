@@ -1,57 +1,78 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
-Description: 'CI/CD Demo App - SAM Template for Flask Application'
+Description: Infra EC2 para demo CI/CD con CodeDeploy
 
 Parameters:
-  Environment:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: default-key
+  InstanceType:
     Type: String
-    Default: dev
-    AllowedValues: [dev, staging, prod]
-    Description: Environment name
-
-Globals:
-  Function:
-    Timeout: 30
-    Runtime: python3.9
-    MemorySize: 128
+    Default: t3.micro
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where the security group will be created
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: Amazon Linux 2 AMI ID for your region
 
 Resources:
-  CICDDemoFunction:
-    Type: AWS::Serverless::Function
+  InstanceRole:
+    Type: AWS::IAM::Role
     Properties:
-      CodeUri: .
-      Handler: app.lambda_handler
-      Runtime: python3.9
-      Environment:
-        Variables:
-          ENVIRONMENT: !Ref Environment
-      Events:
-        HelloAPI:
-          Type: Api
-          Properties:
-            Path: /
-            Method: get
-        CatchAllAPI:
-          Type: Api
-          Properties:
-            Path: /{proxy+}
-            Method: ANY
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
 
-  CICDDemoLogGroup:
-    Type: AWS::Logs::LogGroup
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
     Properties:
-      LogGroupName: !Sub '/aws/lambda/${CICDDemoFunction}'
-      RetentionInDays: 14
+      Roles: 
+        - !Ref InstanceRole
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SG demo - permite HTTP
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds: 
+        - !Ref SecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y ruby wget python3 git
+          cd /home/ec2-user
+          wget https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
+          chmod +x ./install
+          ./install auto
+          systemctl enable codedeploy-agent
+          systemctl start codedeploy-agent
 
 Outputs:
-  CICDDemoApi:
-    Description: "API Gateway endpoint URL for the CI/CD Demo function"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Stage/"
-    Export:
-      Name: !Sub "${AWS::StackName}-ApiUrl"
-  
-  CICDDemoFunction:
-    Description: "CI/CD Demo Lambda Function ARN"
-    Value: !GetAtt CICDDemoFunction.Arn
-    Export:
-      Name: !Sub "${AWS::StackName}-FunctionArn"
+  InstanceId:
+    Value: !Ref EC2Instance
+    Description: EC2 Instance ID
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+    Description: Security Group ID
