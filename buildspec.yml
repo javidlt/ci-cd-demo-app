@@ -1,0 +1,13 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      - echo "Instalando dependencias..."
+      - pip install -r requirements.txt
+  build:
+    commands:
+      - echo "Ejecutando pruebas..."
+      - pytest tests/
+artifacts:
+  files:
+    - '**/*'

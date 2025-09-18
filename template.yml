@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'CI/CD Demo App - SAM Template for Flask Application'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.9
+    MemorySize: 128
+
+Resources:
+  CICDDemoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+      Events:
+        HelloAPI:
+          Type: Api
+          Properties:
+            Path: /
+            Method: get
+        CatchAllAPI:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  CICDDemoLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${CICDDemoFunction}'
+      RetentionInDays: 14
+
+Outputs:
+  CICDDemoApi:
+    Description: "API Gateway endpoint URL for the CI/CD Demo function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Stage/"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+  
+  CICDDemoFunction:
+    Description: "CI/CD Demo Lambda Function ARN"
+    Value: !GetAtt CICDDemoFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"
